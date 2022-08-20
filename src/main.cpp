@@ -41,6 +41,8 @@ String pss;  // string variable to store password
 
 #define LEFT_TRANSLATION '9'
 #define RIGHT_TRANSLATION 'a'
+#define WIFI_CONNECT_FAIL '0'
+#define WIFI_CONNECT_SUCCESS '1'
 const char *TOPIC = "car_control_ApjJZcy9Dh";        //后面为设备id
 const char *client_id = "ApjJZcy9Dh";                //客户端id，必须唯一，用于控制端监听 上下线，和控制命令的发送
 const char *TOPIC_STATUS = "home/status/ApjJZcy9Dh"; //客户端id，必须唯一，用于控制端监听 上下线，和控制命令的发送
@@ -51,7 +53,7 @@ PubSubClient client;
 void turnPWM(char data, double speed, int angle);
 void callback(char *topic, byte *payload, unsigned int length);
 void turn(char data, int angle);
-
+void serialReadCMD();
 // void writeStringToFlash(const char *toStore, int startAddr);
 // String readStringFromFlash(int startAddr);
 
@@ -70,12 +72,12 @@ bool AutoConfig()
 {
 
   WiFi.begin();
-  for (int i = 0; i < 15; i++)
+  for (int i = 0; i < 10; i++)
   {
     int wstatus = WiFi.status();
     if (wstatus == WL_CONNECTED)
     {
-      Serial.println("WIFI SmartConfig Success");
+      Serial.println("WIFI Connect Success");
       Serial.printf("SSID:%s", WiFi.SSID().c_str());
       Serial.printf(", PSW:%s\r\n", WiFi.psk().c_str());
       Serial.print("LocalIP:");
@@ -86,12 +88,11 @@ bool AutoConfig()
     }
     else
     {
-      Serial.print("WIFI AutoConfig Waiting......");
-      Serial.println(wstatus);
+      Serial.println("WIFI Connect Waiting......");
       delay(1000);
     }
   }
-  Serial.println("WIFI AutoConfig Faild!");
+  //Serial.println("WIFI Config Faild!");
   return false;
 }
 /***
@@ -130,17 +131,30 @@ void SmartConfig()
  * 连接wifi
 
  * */
-void connectWifi()
+void connectWifi(char *wifiName, char *wifiPwd)
 {
 
-  WiFi.begin("Xiaomi_FDD9", "lihai2070*");
+  int count = 0;
+  WiFi.begin(wifiName, wifiPwd);
 
-  while (WiFi.status() != WL_CONNECTED)
+
+  while ( WiFi.status() != WL_CONNECTED)
   {
+    if (count > 20)
+    {
+      SerialBt.println(WIFI_CONNECT_FAIL); //连接失败
+      break;
+    }
+
     delay(300);
     Serial.println('.');
+    count++;
   }
-  Serial.println(WiFi.localIP());
+  if ( WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println(WiFi.localIP());
+    SerialBt.println(WIFI_CONNECT_SUCCESS); //连接成功
+  }
 }
 void stop()
 {
@@ -173,21 +187,22 @@ void setup()
   Serial.begin(115200);
 
   pinMode(WiFi_rst, INPUT);
-  connectWifi();
+  // connectWifi("Xiaomi_FDD9","lihai2070*");
 
   delay(100);
-  // if (!AutoConfig())
-  // {
-  //   SmartConfig();
-  // }
+  SerialBt.begin("CoolPlay");
+  SerialBt.setPin("1234");
+  while (!AutoConfig())
+  {
+    // SmartConfig();
+
+    serialReadCMD();
+  }
 
   client.setClient(espClient);
   client.setServer("192.168.31.29", 1883); // tcp://broker-cn.emqx.io
   // client.setServer("broker-cn.emqx.io", 1883); // tcp://broker-cn.emqx.io
   client.setCallback(callback);
-
-  SerialBt.begin("LiXiangSmartCar");
-  SerialBt.setPin("1234");
 
   pinMode(in3, OUTPUT);
   pinMode(in4, OUTPUT);
@@ -236,14 +251,13 @@ void callback(char *topic, byte *payload, unsigned int length)
 
   // turn((char)payload[0], angle.toInt());
 
-  turnPWM((char)payload[0], speedPercend.toInt() * MAX_SPEED/100, angle.toInt());
+  turnPWM((char)payload[0], speedPercend.toInt() * MAX_SPEED / 100, angle.toInt());
   lastReceiveMsg = millis();
 }
 
 void reconnect()
 {
-  while (!client.connected())
-  {
+  
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
     if (client.connect(client_id))
@@ -260,7 +274,7 @@ void reconnect()
       // Wait 5 seconds before retrying
       delay(5000);
     }
-  }
+  
 }
 
 /**
@@ -268,21 +282,29 @@ void reconnect()
  **/
 void serialReadCMD()
 {
-  if (SerialBt.available())
+
+  while (SerialBt.available())
   {
-    char data = SerialBt.read();
-    turn(data, 0);
+    // chat []msg =    SerialBt.available
+    // char *buffer;
+    // SerialBt.readBytes(buffer, SerialBt.available());
+    // turn(data, 0);
+    // msg = msg + data;
+
+    String data = SerialBt.readString();
+    Serial.println(" WiFi data: " + data);
+    String name = data.substring(0, data.indexOf("|"));
+    String pwd = data.substring(data.indexOf("|") + 1);
+    Serial.println(" WiFi name: " + name);
+    Serial.println(" WiFi pwd: " + pwd);
+    connectWifi(name.begin(), pwd.begin());
+    delay(15);
   }
-  delay(15);
 }
 
 void loop()
 {
 
-  if (!client.connected())
-  {
-    reconnect();
-  }
   client.loop();
 
   long now = millis();
@@ -290,7 +312,7 @@ void loop()
   {
     lastMsg = now;
     client.publish(TOPIC_STATUS, "{device:client_id,'status':'on'}");
-    if (now - lastReceiveMsg > 3000) // 3s 没有收到命令，让小车停止,没2s 检测一次
+    if (now - lastReceiveMsg > 2000) // 2s 没有收到命令，让小车停止,每2s 检测一次
     {
       turn(STOP, 0);
     }
@@ -316,6 +338,11 @@ void loop()
     Serial.println("Restarting the ESP");
     delay(500);
     ESP.restart(); // Restart ESP
+  }
+
+  if (!client.connected())
+  {
+    reconnect();
   }
 }
 
