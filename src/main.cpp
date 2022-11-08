@@ -43,9 +43,12 @@ String pss;  // string variable to store password
 #define RIGHT_TRANSLATION 'a'
 #define WIFI_CONNECT_FAIL '0'
 #define WIFI_CONNECT_SUCCESS '1'
-const char *TOPIC = "car_control_ApjJZcy9Dh";        //后面为设备id
-const char *client_id = "ApjJZcy9Dh";                //客户端id，必须唯一，用于控制端监听 上下线，和控制命令的发送
-const char *TOPIC_STATUS = "home/status/ApjJZcy9Dh"; //客户端id，必须唯一，用于控制端监听 上下线，和控制命令的发送
+const char *client_id = "你的小车id";                //客户端id，必须唯一，
+const char *TOPIC = "car_control_你的小车id";        //后面为设备id ，
+const char *TOPIC_STATUS = "home/status/你的小车id"; //用于控制端监听 上下线，
+const char *MQTT = "car.mytx.tech";                           // MQTT 连接地址  // tcp://car.mytx.tech
+// tcp://broker-cn.emqx.io
+// client.setServer("broker-cn.emqx.io", 1883); // tcp://broker-cn.emqx.io
 // 订阅信息主题
 BluetoothSerial SerialBt; // esp32 经典蓝牙 4.0 以下
 WiFiClient espClient;
@@ -92,7 +95,7 @@ bool AutoConfig()
       delay(1000);
     }
   }
-  //Serial.println("WIFI Config Faild!");
+  // Serial.println("WIFI Config Faild!");
   return false;
 }
 /***
@@ -137,8 +140,7 @@ void connectWifi(char *wifiName, char *wifiPwd)
   int count = 0;
   WiFi.begin(wifiName, wifiPwd);
 
-
-  while ( WiFi.status() != WL_CONNECTED)
+  while (WiFi.status() != WL_CONNECTED)
   {
     if (count > 20)
     {
@@ -150,7 +152,7 @@ void connectWifi(char *wifiName, char *wifiPwd)
     Serial.println('.');
     count++;
   }
-  if ( WiFi.status() == WL_CONNECTED)
+  if (WiFi.status() == WL_CONNECTED)
   {
     Serial.println(WiFi.localIP());
     SerialBt.println(WIFI_CONNECT_SUCCESS); //连接成功
@@ -187,21 +189,22 @@ void setup()
   Serial.begin(115200);
 
   pinMode(WiFi_rst, INPUT);
-  // connectWifi("Xiaomi_FDD9","lihai2070*");
 
+  //直接写死wifi连接信息 无用使用app 配网
+  connectWifi("Xiaomi_FDD9", "lihai2070*");
   delay(100);
   SerialBt.begin("CoolPlay");
   SerialBt.setPin("1234");
-  while (!AutoConfig())
-  {
-    // SmartConfig();
+  //下面的while 循环是进入配网等待，如果前面已经调用了 connectWifi（）方法，无需再使用配网
+  // while (!AutoConfig())
+  // {
+  //   // SmartConfig(); 这个esp 官方配置方式 不太好使，，
 
-    serialReadCMD();
-  }
+  //   serialReadCMD();
+  // }
 
   client.setClient(espClient);
-  client.setServer("192.168.31.29", 1883); // tcp://broker-cn.emqx.io
-  // client.setServer("broker-cn.emqx.io", 1883); // tcp://broker-cn.emqx.io
+  client.setServer(MQTT, 1883);
   client.setCallback(callback);
 
   pinMode(in3, OUTPUT);
@@ -222,7 +225,7 @@ void setup()
 void callback(char *topic, byte *payload, unsigned int length)
 {
 
-  String angle = "";
+  String angle = ""; // 000
   speedPercend = "";
   Serial.print("Message arrived [");
   Serial.print(topic); // 打印主题信息
@@ -257,24 +260,23 @@ void callback(char *topic, byte *payload, unsigned int length)
 
 void reconnect()
 {
-  
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
-    if (client.connect(client_id))
-    {
-      Serial.println("connected");
-      // 连接成功时订阅主题
-      client.subscribe(TOPIC);
-    }
-    else
-    {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  
+
+  Serial.print("Attempting MQTT connection...");
+  // Attempt to connect
+  if (client.connect(client_id))
+  {
+    Serial.println("connected");
+    // 连接成功时订阅主题
+    client.subscribe(TOPIC);
+  }
+  else
+  {
+    Serial.print("failed, rc=");
+    Serial.print(client.state());
+    Serial.println(" try again in 5 seconds");
+    // Wait 5 seconds before retrying
+    delay(5000);
+  }
 }
 
 /**
